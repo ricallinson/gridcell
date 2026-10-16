@@ -77,6 +77,40 @@ func (l *Landmark) EncodeToBits(activationThreshold float64) []uint64 {
 	return packedWords
 }
 
+// DecodeBitsToLandmark is a standalone constructor function that parses a raw,
+// high-dimensional SDM packed address vector using the structural layout of a
+// provided CoordinateSystem to instantiate and return a fully populated Landmark.
+func DecodeBitsToLandmark(sys *CoordinateSystem, packedWords []uint64, activationThreshold float64) *Landmark {
+	// 1. Separate and extract the continuous orientation angle from the trailing sector
+	extractedHeading := sys.ExtractHeadingFromBits(packedWords)
+
+	// 2. Separate and reconstruct the structural multi-layer [][]float64 matrix
+	decodedGridCode := make([][]float64, len(sys.Modules))
+
+	bitIdx := 0
+	for mIdx, mod := range sys.Modules {
+		decodedGridCode[mIdx] = make([]float64, len(mod.Cells))
+		for cIdx := range mod.Cells {
+			// Pull structural flags directly out of the packed storage words
+			isFired := (packedWords[bitIdx/64] & (1 << (uint(bitIdx) % 64))) != 0
+
+			if isFired {
+				decodedGridCode[mIdx][cIdx] = activationThreshold
+			} else {
+				decodedGridCode[mIdx][cIdx] = 0.0
+			}
+			bitIdx++
+		}
+	}
+
+	// 3. Assemble and return a live pointer instance bound to our active spatial net
+	return &Landmark{
+		GridCode: decodedGridCode,
+		Heading:  extractedHeading,
+		sys:      sys,
+	}
+}
+
 // ExtractHeading FromBits isolated the trailing 64-bit thermometer sector of an SDM address
 // and converts the active bit count back into a continuous heading angle in radians [0, 2*Pi).
 func (cs *CoordinateSystem) ExtractHeadingFromBits(packedWords []uint64) float64 {

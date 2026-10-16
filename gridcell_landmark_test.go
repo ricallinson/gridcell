@@ -88,3 +88,65 @@ func TestLandmarkHeadingExtraction(t *testing.T) {
 		t.Logf("PASS: Successfully extracted mutable heading from packed bits within resolution step precision.")
 	}
 }
+
+func TestStandaloneDecodeBitsToLandmark(t *testing.T) {
+	// Standard 1,000m setup hierarchy context matching previous models
+	sys := NewCoordinateSystem(6.0, 2.0, 9, 4)
+	threshold := 0.65
+
+	// Coordinates placed deep inside a macro grid tracking quadrant
+	origX, origY := 125.50, -410.85
+	origHeading := 45.0 * (math.Pi / 180.0) // 45 degrees expressed in radians
+
+	// 1. Initialize original reference landmark instance using the coordinate system context
+	origCodeMatrix := sys.Encode(origX, origY)
+	originalLandmark := sys.NewLandmark(origCodeMatrix, origHeading)
+
+	// 2. Compress the composite spatial key down to packed SDM words
+	packedSdmBits := originalLandmark.EncodeToBits(threshold)
+
+	// 3. Invoke the standalone constructor function (passing sys as the first argument)
+	decodedLandmark := DecodeBitsToLandmark(sys, packedSdmBits, threshold)
+
+	// Ensure the decoded object was instantiated properly and bound to its parent context
+	if decodedLandmark == nil {
+		t.Fatalf("FAIL: Standalone constructor returned a nil landmark reference.")
+	}
+	if decodedLandmark.sys != sys {
+		t.Errorf("FAIL: Standalone landmark failed to capture the parent CoordinateSystem context pointer reference.")
+	}
+
+	// --- VALIDATION SECTOR 1: Verify Mutable Orientation Extraction ---
+	origDeg := origHeading * (180.0 / math.Pi)
+	decodedDeg := decodedLandmark.Heading * (180.0 / math.Pi)
+
+	// 64-bit thermometer encoding limits quantization precision increments to ~5.625°
+	const headingToleranceDegrees = 6.0
+	degDelta := math.Abs(decodedDeg - origDeg)
+
+	if degDelta > headingToleranceDegrees {
+		t.Errorf("FAIL: Standalone reconstructed Landmark heading drifted outside tolerance limits! Target: %.2f°, Got: %.2f°", origDeg, decodedDeg)
+	} else {
+		t.Logf("PASS: Standalone constructor extracted Landmark Heading accurately: %.2f°", decodedDeg)
+	}
+
+	// --- VALIDATION SECTOR 2: Verify Continuous Positional Convergence ---
+	// Drop the newly unpacked struct grid matrix directly down to the standard search sieve
+	globalMinX, globalMaxX := -500.0, 500.0
+	globalMinY, globalMaxY := -500.0, 500.0
+
+	recoveredX, recoveredY := sys.Decode(decodedLandmark.GridCode, globalMinX, globalMaxX, globalMinY, globalMaxY, 50)
+
+	errX := math.Abs(recoveredX - origX)
+	errY := math.Abs(recoveredY - origY)
+	totalDistanceError := math.Sqrt(errX*errX + errY*errY)
+
+	// Strict requirement matching standard 1,000-meter spatial convergence thresholds
+	const strictTolerance = 0.25
+	if totalDistanceError > strictTolerance {
+		t.Errorf("FAIL: Standalone landmark matrix failed spatial convergence check! Decoded location: (%.2f, %.2f) instead of (%.2f, %.2f) - Delta Error: %.4fm",
+			recoveredX, recoveredY, origX, origY, totalDistanceError)
+	} else {
+		t.Logf("PASS: Standalone landmark matrix successfully resolved via sieve decoders with a precision error of %.4fm", totalDistanceError)
+	}
+}
