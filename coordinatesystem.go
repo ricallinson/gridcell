@@ -19,6 +19,78 @@ func NewCoordinateSystem(baseScale, scaleMultiplier float64, numModules, cellsPe
 	return cs
 }
 
+// ProjectAndEncodeCoordinate calculates the unique multi-layer neural grid code matrix
+// at a single target point located at a specific viewing distance and heading angle
+// relative to a starting coordinate.
+func (cs *CoordinateSystem) ProjectAndEncodeCoordinate(startX, startY float64, viewAngleRad float64, distance float64) [][]float64 {
+	// 1. Calculate the continuous target coordinate via vector decomposition
+	targetX := startX + distance*math.Cos(viewAngleRad)
+	targetY := startY + distance*math.Sin(viewAngleRad)
+
+	// 2. Feed the projected position into our multi-module neural encoder
+	return cs.Encode(targetX, targetY)
+}
+
+// ProjectAndEncodeToBits calculates the binarized, flat high-dimensional address vector
+// packed into uint64 words for a target point at a specific viewing distance and heading angle
+// relative to a starting coordinate.
+func (cs *CoordinateSystem) ProjectAndEncodeToBits(startX, startY float64, viewAngleRad float64, distance float64, activationThreshold float64) []uint64 {
+	// 1. Calculate the raw analog matrix at the remote look-ahead coordinates
+	analogCode := cs.ProjectAndEncodeCoordinate(startX, startY, viewAngleRad, distance)
+
+	// 2. Pass that analog matrix directly to the SDM packing engine
+	return cs.EncodeToBits(analogCode, activationThreshold)
+}
+
+// EncodeToBits accepts a continuous matrix output from CoordinateSystem.Encode()
+// and packages it into an SDM-ready flat binary bit array packed in uint64 words.
+func (cs *CoordinateSystem) EncodeToBits(floatCode [][]float64, activationThreshold float64) []uint64 {
+	// Count total element length to build exact word storage limits
+	totalCells := 0
+	for _, layer := range floatCode {
+		totalCells += len(layer)
+	}
+
+	numWords := (totalCells + 63) / 64
+	packedWords := make([]uint64, numWords)
+
+	bitIdx := 0
+	for _, layer := range floatCode {
+		for _, rate := range layer {
+			if rate >= activationThreshold {
+				packedWords[bitIdx/64] |= (1 << (uint(bitIdx) % 64))
+			}
+			bitIdx++
+		}
+	}
+
+	return packedWords
+}
+
+// DecodeBits converts packed uint64 words back into a continuous multi-layer[][]float64 grid matrix
+// that can be cleanly evaluated by your existing geometric CoordinateSystem.Decode loop.
+func (cs *CoordinateSystem) DecodeBits(packedWords []uint64, activationThreshold float64) [][]float64 {
+	decodedFloatCode := make([][]float64, len(cs.Modules))
+
+	bitIdx := 0
+	for mIdx, mod := range cs.Modules {
+		decodedFloatCode[mIdx] = make([]float64, len(mod.Cells))
+		for cIdx := range mod.Cells {
+			// Extract individual boolean bit from packed word indices
+			isFired := (packedWords[bitIdx/64] & (1 << (uint(bitIdx) % 64))) != 0
+
+			if isFired {
+				decodedFloatCode[mIdx][cIdx] = activationThreshold
+			} else {
+				decodedFloatCode[mIdx][cIdx] = 0.0
+			}
+			bitIdx++
+		}
+	}
+
+	return decodedFloatCode
+}
+
 func (cs *CoordinateSystem) Encode(x, y float64) [][]float64 {
 	code := make([][]float64, len(cs.Modules))
 	for i, mod := range cs.Modules {
@@ -160,53 +232,4 @@ func (cs *CoordinateSystem) refineLocalPrecision(targetCode [][]float64, bestX, 
 		}
 	}
 	return finalX, finalY
-}
-
-// EncodeToBits accepts a continuous matrix output from CoordinateSystem.Encode()
-// and packages it into an SDM-ready flat binary bit array packed in uint64 words.
-func (cs *CoordinateSystem) EncodeToBits(floatCode [][]float64, activationThreshold float64) []uint64 {
-	// Count total element length to build exact word storage limits
-	totalCells := 0
-	for _, layer := range floatCode {
-		totalCells += len(layer)
-	}
-
-	numWords := (totalCells + 63) / 64
-	packedWords := make([]uint64, numWords)
-
-	bitIdx := 0
-	for _, layer := range floatCode {
-		for _, rate := range layer {
-			if rate >= activationThreshold {
-				packedWords[bitIdx/64] |= (1 << (uint(bitIdx) % 64))
-			}
-			bitIdx++
-		}
-	}
-
-	return packedWords
-}
-
-// DecodeBits converts packed uint64 words back into a continuous multi-layer[][]float64 grid matrix
-// that can be cleanly evaluated by your existing geometric CoordinateSystem.Decode loop.
-func (cs *CoordinateSystem) DecodeBits(packedWords []uint64, activationThreshold float64) [][]float64 {
-	decodedFloatCode := make([][]float64, len(cs.Modules))
-
-	bitIdx := 0
-	for mIdx, mod := range cs.Modules {
-		decodedFloatCode[mIdx] = make([]float64, len(mod.Cells))
-		for cIdx := range mod.Cells {
-			// Extract individual boolean bit from packed word indices
-			isFired := (packedWords[bitIdx/64] & (1 << (uint(bitIdx) % 64))) != 0
-
-			if isFired {
-				decodedFloatCode[mIdx][cIdx] = activationThreshold
-			} else {
-				decodedFloatCode[mIdx][cIdx] = 0.0
-			}
-			bitIdx++
-		}
-	}
-
-	return decodedFloatCode
 }
