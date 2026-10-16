@@ -287,7 +287,16 @@ func TestGlobalDecodingStressTest(t *testing.T) {
 	// Scale Layers: 6m, 12m, 24m, 48m, 96m, 192m, 384m, 768m, 1536m.
 	// The 1,536-meter module uniquely anchors our 1,000m boundaries including its
 	// diagonal corners, allowing the cascading frequency sieve to decode perfectly.
-	sys := NewCoordinateSystem(6.0, 2.0, 9, 4)
+	
+	// baseScale := 3.0
+	// scaleMultiplier := 1.6
+	// numModules := 4
+	// cellsPerSide := 3
+	baseScale := 6.0
+	scaleMultiplier := 2.0
+	numModules := 9
+	cellsPerSide := 4
+	sys := NewCoordinateSystem(baseScale, scaleMultiplier, numModules, cellsPerSide)
 
 	// Macroscopic 1,000m x 1,000m Environment Boundaries
 	globalMinX, globalMaxX := -500.0, 500.0
