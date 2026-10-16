@@ -4,29 +4,21 @@ import (
 	"math"
 )
 
-// CoordinateSystem combines multiple distinct grid modules to establish a multi-scale spatial system.
 type CoordinateSystem struct {
 	Modules []*GridModule
 }
 
-// NewCoordinateSystem sets up a system using a base scale, geometric step multiplier, and module count.
 func NewCoordinateSystem(baseScale, scaleMultiplier float64, numModules, cellsPerModuleSide int) *CoordinateSystem {
-	cs := &CoordinateSystem{
-		Modules: make([]*GridModule, numModules),
-	}
-
+	cs := &CoordinateSystem{Modules: make([]*GridModule, numModules)}
 	currentScale := baseScale
 	for i := 0; i < numModules; i++ {
-		// Vary the structural orientation slightly across modules to reduce global aliasing
 		orientation := float64(i) * (math.Pi / 12.0)
 		cs.Modules[i] = NewGridModule(currentScale, orientation, cellsPerModuleSide)
 		currentScale *= scaleMultiplier
 	}
-
 	return cs
 }
 
-// Encode converts a 2D location into a multi-module neural ensemble code.
 func (cs *CoordinateSystem) Encode(x, y float64) [][]float64 {
 	code := make([][]float64, len(cs.Modules))
 	for i, mod := range cs.Modules {
@@ -35,34 +27,57 @@ func (cs *CoordinateSystem) Encode(x, y float64) [][]float64 {
 	return code
 }
 
-// Decode translates a multi-module grid code back into Cartesian coordinates.
-// It uses a Mean Squared Error (MSE) minimization walk across a specified bounded search space.
-func (cs *CoordinateSystem) Decode(targetCode [][]float64, minX, maxX, minY, maxY float64, searchResolution int) (bestX, bestY float64) {
-	minErr := math.MaxFloat64
+// Decode tracks down coordinates inside given boundaries using a strict cascading frequency sieve.
+// It applies a 1.5x safety scale-padding window during descending transitions to eliminate boundary clipping.
+func (cs *CoordinateSystem) Decode(targetCode [][]float64, minX, maxX, minY, maxY float64, searchResolution int) (float64, float64) {
+	numModules := len(cs.Modules)
+	curMinX, curMaxX := minX, maxX
+	curMinY, curMaxY := minY, maxY
 
-	stepX := (maxX - minX) / float64(searchResolution)
-	stepY := (maxY - minY) / float64(searchResolution)
+	bestX, bestY := 0.0, 0.0
 
-	for i := 0; i <= searchResolution; i++ {
-		cx := minX + float64(i)*stepX
-		for j := 0; j <= searchResolution; j++ {
-			cy := minY + float64(j)*stepY
+	// Sieve down the module layers from most macroscopic to most microscopic
+	for stage := numModules - 1; stage >= 0; stage-- {
+		bestX, bestY = 0.0, 0.0
+		minErr := math.MaxFloat64
 
-			totalErr := 0.0
-			for mIdx, mod := range cs.Modules {
-				currentRates := mod.Encode(cx, cy)
-				for cIdx := range currentRates {
-					diff := currentRates[cIdx] - targetCode[mIdx][cIdx]
-					totalErr += diff * diff
+		stepX := (curMaxX - curMinX) / float64(searchResolution)
+		stepY := (curMaxY - curMinY) / float64(searchResolution)
+
+		for i := 0; i <= searchResolution; i++ {
+			cx := curMinX + float64(i)*stepX
+			for j := 0; j <= searchResolution; j++ {
+				cy := curMinY + float64(j)*stepY
+
+				totalErr := 0.0
+				// Evaluate ONLY from the current staging tier up to the largest module.
+				// This isolates high frequencies out of early global iterations.
+				for mIdx := stage; mIdx < numModules; mIdx++ {
+					mod := cs.Modules[mIdx]
+					currentRates := mod.Encode(cx, cy)
+					for cIdx := range currentRates {
+						diff := currentRates[cIdx] - targetCode[mIdx][cIdx]
+						totalErr += diff * diff
+					}
+				}
+
+				if totalErr < minErr {
+					minErr = totalErr
+					bestX = cx
+					bestY = cy
 				}
 			}
+		}
 
-			if totalErr < minErr {
-				minErr = totalErr
-				bestX = cx
-				bestY = cy
-			}
+		// Tighten the boundary focus window with a 1.5x safety multiplier
+		// to gracefully capture phase shifts near boundary corners.
+		if stage > 0 {
+			nextModuleScale := cs.Modules[stage-1].Scale
+			padding := nextModuleScale * 1.5
+			curMinX, curMaxX = bestX-padding, bestX+padding
+			curMinY, curMaxY = bestY-padding, bestY+padding
 		}
 	}
+
 	return bestX, bestY
 }
