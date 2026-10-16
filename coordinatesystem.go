@@ -19,6 +19,15 @@ func NewCoordinateSystem(baseScale, scaleMultiplier float64, numModules, cellsPe
 	return cs
 }
 
+// TotalCells returns the absolute length of the flat address space across all modules.
+func (cs *CoordinateSystem) TotalCells() int {
+	total := 0
+	for _, mod := range cs.Modules {
+		total += len(mod.Cells)
+	}
+	return total
+}
+
 // ProjectAndEncodeCoordinate calculates the unique multi-layer neural grid code matrix
 // at a single target point located at a specific viewing distance and heading angle
 // relative to a starting coordinate.

@@ -82,6 +82,33 @@ func TestGridModuleEncoding(t *testing.T) {
 	}
 }
 
+// TestCoordinateSystemTotalCells verifies that TotalCells dynamically calculates
+// the absolute length of the flat spatial neural population array across all layers.
+func TestCoordinateSystemTotalCells(t *testing.T) {
+	// Configure parameters:
+	// 5 distinct modules, with a 4x4 matrix per module side (16 cells per module population)
+	numModules := 5
+	cellsPerSide := 4
+	expectedCellsPerModule := cellsPerSide * cellsPerSide     // 16 cells
+	expectedTotalCells := numModules * expectedCellsPerModule // 5 * 16 = 80 total cells
+
+	// Initialize the structural coordinate space
+	sys := NewCoordinateSystem(6.0, 2.0, numModules, cellsPerSide)
+
+	// Fetch calculation from our target method
+	resultTotalCells := sys.TotalCells()
+
+	t.Logf("Modules: %d, Cells Per Layer Side: %d (Cells Per Module: %d)", numModules, cellsPerSide, expectedCellsPerModule)
+	t.Logf("Expected Flat Bit Vector Length: %d, Method Output: %d", expectedTotalCells, resultTotalCells)
+
+	// Confirm calculation accuracy
+	if resultTotalCells != expectedTotalCells {
+		t.Errorf("FAIL: TotalCells calculation mismatch! Expected exact count of %d slots, but got %d", expectedTotalCells, resultTotalCells)
+	} else {
+		t.Log("PASS: TotalCells accurately maps structural module array allocations.")
+	}
+}
+
 // TestCoordinateSystemEndToEnd encodes a coordinate into the multi-scale combinatorial
 // representation and confirms that the decoding walk reconstructs the original location accurately.
 func TestCoordinateSystemEndToEnd(t *testing.T) {
