@@ -287,7 +287,7 @@ func TestGlobalDecodingStressTest(t *testing.T) {
 	// Scale Layers: 6m, 12m, 24m, 48m, 96m, 192m, 384m, 768m, 1536m.
 	// The 1,536-meter module uniquely anchors our 1,000m boundaries including its
 	// diagonal corners, allowing the cascading frequency sieve to decode perfectly.
-	
+
 	// baseScale := 3.0
 	// scaleMultiplier := 1.6
 	// numModules := 4
