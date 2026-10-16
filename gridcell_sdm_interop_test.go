@@ -19,7 +19,7 @@ func HammingDistance(w1, w2 []uint64) int {
 	return dist
 }
 
-func toString(bits []uint64) string {
+func uint64SliceToString(bits []uint64) string {
 	var result string
 	for _, word := range bits {
 		// Print each uint64 word as a 64-character wide zero-padded binary string
@@ -47,14 +47,17 @@ func TestSDMInteroperabilityPipeline(t *testing.T) {
 	// 2. Transfrom Float Matrix into Packed SDM uint64 words
 	packedBits := sys.EncodeToBits(floatCodeOrig, threshold)
 
-	t.Logf("EncodeToBits: %s", toString(packedBits))
-
 	// 3. Confirm spatial alignment of packed addresses via Hamming calculations
-	shiftedFloatCode := sys.Encode(targetX+0.15, targetY-0.05) // Near drift
+	shiftedFloatCode := sys.Encode(targetX+1, targetY-1) // Near drift
 	shiftedPackedBits := sys.EncodeToBits(shiftedFloatCode, threshold)
 
 	nearDist := HammingDistance(packedBits, shiftedPackedBits)
-	t.Logf("Verified packing metrics. Local neighbor Hamming Distance: %d bits", nearDist)
+	if nearDist != 8 {
+		t.Logf("Failed packing metrics. Local neighbor Hamming Distance was %d bits not 8 bits", nearDist)
+	} else {
+		t.Logf("Verified packing metrics. Local neighbor Hamming Distance: %d bits", nearDist)
+		t.Logf("\n%s\n%s", uint64SliceToString(packedBits), uint64SliceToString(shiftedPackedBits))
+	}
 
 	// 4. Reverse the structure: Reconstruct float[][] matrix array straight out of binary words
 	floatCodeReconstructed := sys.DecodeBits(packedBits, threshold)
